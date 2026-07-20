@@ -11,6 +11,9 @@
     min-width: 24px;
     position: relative;
     z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .instead-feedback-icon:hover {
