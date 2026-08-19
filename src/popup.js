@@ -96,9 +96,13 @@ export function showFeedbackPopup(messageId) {
 
     const wrapper = document.createElement('div');
     wrapper.innerHTML = popupHtml;
-    document.body.appendChild(wrapper.firstElementChild);
 
-    const popup = document.querySelector('.instead-popup-overlay');
+    // Hold on to the node we actually inserted. Looking it up again by class would
+    // return the first '.instead-popup-overlay' in the document, so any stale
+    // overlay left behind would collect every listener and leave this one inert.
+    const popup = wrapper.firstElementChild;
+    document.body.appendChild(popup);
+
     const feedbackInput = popup.querySelector('.instead-feedback-input');
     const sendBtn = popup.querySelector('.instead-send-btn');
     const replaceBtn = popup.querySelector('.instead-replace-btn');
