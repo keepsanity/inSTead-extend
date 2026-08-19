@@ -6,12 +6,102 @@
 // Third-party extensions are at /scripts/extensions/third-party/[name]/
 // So we need to go up 4 levels to reach /scripts/ for script.js
 // And 3 levels up to reach /scripts/ then extensions.js for extensions.js
-import { getContext, extension_settings } from '../../../extensions.js';
-import { eventSource, event_types, saveChatConditional, reloadCurrentChat, saveSettingsDebounced, generateQuietPrompt, streamingProcessor, messageFormatting } from '../../../../script.js';
+import { getContext, extension_settings, renderExtensionTemplateAsync } from '../../../extensions.js';
+import { eventSource, event_types, saveChatConditional, reloadCurrentChat, saveSettingsDebounced, deleteSwipe } from '../../../../script.js';
 
 const EXTENSION_NAME = 'inSTead';
+const TEMPLATE_PATH = 'third-party/inSTead';
+
+/**
+ * Matches a status/info block pinned to the end of a message: either an explicit
+ * <infoblock> wrapper or a trailing <details> element. The negative lookahead stops
+ * a match from swallowing an earlier <details> that appears inside the prose.
+ */
+const DEFAULT_BLOCK_REGEX = '(?:<infoblock>[\\s\\S]*?<\\/infoblock>|<details>(?:(?!<details>)[\\s\\S])*?<\\/details>)\\s*$';
+
+const defaultSettings = {
+    /** Connection profile used for revisions. Empty = whatever Connection Manager has selected. */
+    profileId: '',
+    maxTokens: 2048,
+    /** Hold the trailing info block back from the model and re-attach it afterwards */
+    preserveBlock: true,
+    blockRegex: DEFAULT_BLOCK_REGEX,
+    /** @type {Rule[]} Applied to every character */
+    rules: [],
+    /** @type {Record<string, Rule[]>} Keyed by character avatar filename */
+    characterRules: {},
+};
+
+/**
+ * @typedef {object} Rule
+ * @property {string} id
+ * @property {string} forbid What the model should stop doing
+ * @property {string} instead What it should do in its place
+ * @property {boolean} enabled Pre-checked in the revision popup
+ */
 
 let isProcessing = false;
+
+/* -------------------------------------------------------------------------- */
+/* Rules                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The avatar filename identifies a character across renames. Returns null in group
+ * chats, where `characterId` points at whichever member spoke last and cannot be
+ * trusted as "the" character.
+ * @returns {string|null}
+ */
+function getCurrentCharacterKey() {
+    const context = getContext();
+    if (context.groupId) {
+        return null;
+    }
+    if (context.characterId === undefined || context.characterId === null) {
+        return null;
+    }
+    return context.characters[context.characterId]?.avatar ?? null;
+}
+
+/**
+ * @param {string} key Character avatar filename
+ * @returns {Rule[]}
+ */
+function getCharacterRules(key) {
+    if (!key) {
+        return [];
+    }
+    const store = extension_settings.instead.characterRules;
+    if (!Array.isArray(store[key])) {
+        store[key] = [];
+    }
+    return store[key];
+}
+
+/**
+ * Every rule that applies to the chat on screen, global first.
+ * @returns {Rule[]}
+ */
+function getApplicableRules() {
+    const characterKey = getCurrentCharacterKey();
+    return [
+        ...extension_settings.instead.rules,
+        ...(characterKey ? getCharacterRules(characterKey) : []),
+    ].filter(rule => rule.forbid?.trim());
+}
+
+function createRule() {
+    return {
+        id: crypto.randomUUID(),
+        forbid: '',
+        instead: '',
+        enabled: true,
+    };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Message buttons                                                             */
+/* -------------------------------------------------------------------------- */
 
 /**
  * Add feedback icon to a specific message
@@ -33,7 +123,7 @@ function addFeedbackIconToMessage(messageId) {
         if (!message) {
             return;
         }
-        
+
         // Only add to character messages (not user messages)
         if (message.is_user) {
             return;
@@ -59,17 +149,17 @@ function addFeedbackIconToMessage(messageId) {
             return;
         }
 
-        // Create feedback icon button
+        // Create feedback icon button.
+        // Match ST's native markup: the icon classes live on the button div itself,
+        // not on a nested <i>, so it sizes and aligns like its siblings.
         const feedbackButton = document.createElement('div');
-        feedbackButton.className = 'mes_button instead-feedback-icon interactable';
-        feedbackButton.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i>';
+        feedbackButton.className = 'mes_button instead-feedback-icon fa-solid fa-arrows-rotate interactable';
         feedbackButton.title = 'Request revision with feedback';
         feedbackButton.setAttribute('data-mesid', messageId);
         feedbackButton.tabIndex = 0;
 
-        // Insert the button at the beginning
-        buttonsContainer.insertBefore(feedbackButton, buttonsContainer.firstChild);
-        console.debug(`[${EXTENSION_NAME}] Added feedback button to message ${messageId}`);
+        // Append at the end, after the native buttons (Copy is normally last)
+        buttonsContainer.appendChild(feedbackButton);
     } catch (error) {
         console.error(`[${EXTENSION_NAME}] Error adding feedback icon to message ${messageId}:`, error);
     }
@@ -81,11 +171,9 @@ function addFeedbackIconToMessage(messageId) {
 function addFeedbackIconsToMessages() {
     const context = getContext();
     if (!context.chat || !Array.isArray(context.chat) || context.chat.length === 0) {
-        console.debug(`[${EXTENSION_NAME}] No chat loaded yet, skipping...`);
         return;
     }
-    
-    console.debug(`[${EXTENSION_NAME}] Adding feedback icons to all messages...`);
+
     const messages = document.querySelectorAll('.mes');
     messages.forEach((messageElement) => {
         const mesidAttr = messageElement.getAttribute('mesid');
@@ -93,142 +181,73 @@ function addFeedbackIconsToMessages() {
             const messageId = parseInt(mesidAttr, 10);
             if (!isNaN(messageId) && messageId >= 0) {
                 addFeedbackIconToMessage(messageId);
-                addFeedbackDisplayToMessage(messageId);
             }
         }
     });
 }
 
+/* -------------------------------------------------------------------------- */
+/* Revision popup                                                              */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Add feedback display to a revised message
+ * Get the revision metadata stored on the currently displayed swipe, if any.
+ * Returns null when the current swipe was not produced by this extension.
  */
-function addFeedbackDisplayToMessage(messageId) {
-    try {
-        const context = getContext();
-        const chat = context.chat;
-        if (!chat || !Array.isArray(chat) || messageId >= chat.length) {
-            return;
-        }
+function getRevisionForCurrentSwipe(message) {
+    if (!message) {
+        return null;
+    }
 
-        const message = chat[messageId];
-        if (!message) {
-            return;
-        }
+    // When swipes exist, the swipe entry is the only source of truth. message.extra
+    // keeps the last revision's fields even after swiping back to the original, so
+    // falling back to it here would report a revision that is not on screen.
+    const hasSwipeInfo = Array.isArray(message.swipe_info) && message.swipe_id !== undefined;
+    const extra = hasSwipeInfo ? message.swipe_info[message.swipe_id]?.extra : message.extra;
 
-        // Check if this is a revised message with feedback
-        const feedback = getFeedbackForCurrentSwipe(message);
-        if (!feedback) {
-            return;
-        }
+    if (!extra?.instead_feedback) {
+        return null;
+    }
 
-        const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
-        if (!messageElement) {
-            return;
-        }
+    return {
+        feedback: extra.instead_feedback,
+        source: extra.instead_source ?? null,
+        ruleIds: Array.isArray(extra.instead_rules) ? extra.instead_rules : null,
+    };
+}
 
-        // Check if feedback display already exists
-        if (messageElement.querySelector('.instead-feedback-display')) {
-            return;
-        }
+/**
+ * Checkbox list of the rules that apply here.
+ * @param {Rule[]} rules
+ * @param {string[]|null} preselected Rule ids to tick instead of the saved defaults
+ */
+function renderRulePicker(rules, preselected) {
+    if (!rules.length) {
+        return '';
+    }
 
-        // Find the message text container
-        const mesTextParent = messageElement.querySelector('.mes_text')?.parentElement;
-        if (!mesTextParent) {
-            return;
-        }
-
-        // Create feedback display element
-        const feedbackDisplay = document.createElement('div');
-        feedbackDisplay.className = 'instead-feedback-display';
-        feedbackDisplay.innerHTML = `
-            <div class="instead-feedback-header" title="Click to expand/collapse">
-                <i class="fa-solid fa-comment-dots"></i>
-                <span>Revision Feedback</span>
-                <i class="fa-solid fa-chevron-down instead-feedback-chevron"></i>
-            </div>
-            <div class="instead-feedback-content">
-                <div class="instead-feedback-text">${escapeHtml(feedback)}</div>
-                <button class="instead-feedback-copy menu_button" title="Copy feedback">
-                    <i class="fa-solid fa-copy"></i> Copy
-                </button>
-            </div>
+    const items = rules.map(rule => {
+        const checked = preselected ? preselected.includes(rule.id) : rule.enabled;
+        const instead = rule.instead?.trim()
+            ? `<span class="instead-rule-pick-instead">→ ${escapeHtml(rule.instead)}</span>`
+            : '';
+        return `
+            <label class="instead-rule-pick">
+                <input type="checkbox" data-rule-id="${escapeHtml(rule.id)}"${checked ? ' checked' : ''}>
+                <span class="instead-rule-pick-text">
+                    <span class="instead-rule-pick-forbid">${escapeHtml(rule.forbid)}</span>
+                    ${instead}
+                </span>
+            </label>
         `;
+    }).join('');
 
-        // Insert before the message text
-        const mesText = messageElement.querySelector('.mes_text');
-        if (mesText) {
-            mesText.parentElement.insertBefore(feedbackDisplay, mesText);
-        }
-
-        // Add toggle functionality
-        const header = feedbackDisplay.querySelector('.instead-feedback-header');
-        const content = feedbackDisplay.querySelector('.instead-feedback-content');
-        const chevron = feedbackDisplay.querySelector('.instead-feedback-chevron');
-        
-        header.addEventListener('click', () => {
-            content.classList.toggle('expanded');
-            chevron.classList.toggle('rotated');
-        });
-
-        // Add copy functionality
-        const copyBtn = feedbackDisplay.querySelector('.instead-feedback-copy');
-        copyBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            navigator.clipboard.writeText(feedback).then(() => {
-                toastr.success('Feedback copied to clipboard!');
-            }).catch(() => {
-                toastr.error('Failed to copy feedback');
-            });
-        });
-
-        console.debug(`[${EXTENSION_NAME}] Added feedback display to message ${messageId}`);
-    } catch (error) {
-        console.error(`[${EXTENSION_NAME}] Error adding feedback display to message ${messageId}:`, error);
-    }
-}
-
-/**
- * Get the feedback for the currently displayed swipe
- */
-function getFeedbackForCurrentSwipe(message) {
-    // First check swipe_info for the current swipe
-    if (message.swipe_id !== undefined && 
-        Array.isArray(message.swipe_info) && 
-        message.swipe_info[message.swipe_id]?.extra?.instead_feedback) {
-        return message.swipe_info[message.swipe_id].extra.instead_feedback;
-    }
-    
-    // Fall back to message.extra
-    if (message.extra?.instead_feedback) {
-        return message.extra.instead_feedback;
-    }
-    
-    return null;
-}
-
-/**
- * Update feedback displays when swipes change
- */
-function updateFeedbackDisplays() {
-    const context = getContext();
-    if (!context.chat || !Array.isArray(context.chat)) {
-        return;
-    }
-
-    // Remove all existing feedback displays
-    document.querySelectorAll('.instead-feedback-display').forEach(el => el.remove());
-    
-    // Re-add feedback displays for all messages
-    const messages = document.querySelectorAll('.mes');
-    messages.forEach((messageElement) => {
-        const mesidAttr = messageElement.getAttribute('mesid');
-        if (mesidAttr !== null && mesidAttr !== '') {
-            const messageId = parseInt(mesidAttr, 10);
-            if (!isNaN(messageId) && messageId >= 0) {
-                addFeedbackDisplayToMessage(messageId);
-            }
-        }
-    });
+    return `
+        <div class="instead-rules-picker">
+            <div class="instead-rules-picker-title">Standing rules</div>
+            ${items}
+        </div>
+    `;
 }
 
 /**
@@ -241,33 +260,39 @@ function showFeedbackPopup(messageId) {
     }
 
     const context = getContext();
-    const chat = context.chat;
-    const message = chat[messageId];
+    const message = context.chat[messageId];
 
-    // Create popup HTML
+    // If the swipe on screen is itself an inSTead revision, this is a retry:
+    // pre-fill the previous feedback and rewrite from the passage it was based on.
+    const previous = getRevisionForCurrentSwipe(message);
+    const sourceText = previous?.source ?? message.mes;
+    const rules = getApplicableRules();
+
     const popupHtml = `
         <div class="instead-popup-overlay">
             <div class="instead-popup-container">
                 <div class="instead-popup-header">
-                    <h3>Feedback to the current message:</h3>
+                    <h3>${previous ? 'Revise again' : 'Feedback to the current message:'}</h3>
                     <button class="instead-popup-close">&times;</button>
                 </div>
                 <div class="instead-popup-body">
                     <div class="instead-original-message">
-                        <strong>Original message:</strong>
-                        <div class="instead-message-preview">${escapeHtml(message.mes)}</div>
+                        <strong>${previous ? 'Rewriting from:' : 'Original message:'}</strong>
+                        <div class="instead-message-preview">${escapeHtml(sourceText)}</div>
                     </div>
-                    <textarea 
-                        class="instead-feedback-input text_pole" 
+                    ${renderRulePicker(rules, previous?.ruleIds ?? null)}
+                    <textarea
+                        class="instead-feedback-input text_pole"
                         placeholder="Enter your editorial feedback here..."
                         rows="6"
-                    ></textarea>
+                    >${escapeHtml(previous?.feedback ?? '')}</textarea>
                 </div>
                 <div class="instead-popup-footer">
                     <button class="instead-cancel-btn menu_button">Cancel</button>
+                    ${previous ? '<button class="instead-replace-btn menu_button menu_button_icon"><i class="fa-solid fa-rotate"></i>Replace</button>' : ''}
                     <button class="instead-send-btn menu_button menu_button_icon">
                         <i class="fa-solid fa-paper-plane"></i>
-                        Send
+                        ${previous ? 'Add swipe' : 'Send'}
                     </button>
                 </div>
             </div>
@@ -282,6 +307,7 @@ function showFeedbackPopup(messageId) {
     const popup = document.querySelector('.instead-popup-overlay');
     const feedbackInput = popup.querySelector('.instead-feedback-input');
     const sendBtn = popup.querySelector('.instead-send-btn');
+    const replaceBtn = popup.querySelector('.instead-replace-btn');
     const cancelBtn = popup.querySelector('.instead-cancel-btn');
     const closeBtn = popup.querySelector('.instead-popup-close');
 
@@ -299,17 +325,26 @@ function showFeedbackPopup(messageId) {
         if (e.target === popup) closePopup();
     });
 
-    // Send handler
-    sendBtn.addEventListener('click', async () => {
+    /**
+     * @param {boolean} replaceCurrentSwipe Drop the swipe on screen before generating
+     */
+    const submit = async (replaceCurrentSwipe) => {
         const feedback = feedbackInput.value.trim();
-        if (!feedback) {
-            toastr.warning('Please enter some feedback.');
+        const checkedIds = [...popup.querySelectorAll('.instead-rule-pick input:checked')]
+            .map(input => input.dataset.ruleId);
+        const selectedRules = rules.filter(rule => checkedIds.includes(rule.id));
+
+        if (!feedback && !selectedRules.length) {
+            toastr.warning('Enter some feedback or tick at least one rule.');
             return;
         }
 
         closePopup();
-        await processRevisionRequest(messageId, feedback);
-    });
+        await processRevisionRequest(messageId, feedback, sourceText, selectedRules, replaceCurrentSwipe);
+    };
+
+    sendBtn.addEventListener('click', () => submit(false));
+    replaceBtn?.addEventListener('click', () => submit(true));
 
     // Allow Enter key with Ctrl/Cmd to send
     feedbackInput.addEventListener('keydown', (e) => {
@@ -318,239 +353,105 @@ function showFeedbackPopup(messageId) {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            sendBtn.click();
+            submit(Boolean(replaceBtn));
         }
     });
 }
 
+/* -------------------------------------------------------------------------- */
+/* Generation                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Separate the trailing status/info block from the prose.
+ *
+ * Asking the model to reproduce the block never works reliably — it rewrites it,
+ * reformats it, or drops it. Holding it back entirely is the only way to guarantee
+ * it survives byte for byte, and it saves the tokens too.
+ *
+ * @param {string} text
+ * @returns {{ body: string, block: string }}
+ */
+function splitTrailingBlock(text) {
+    const settings = extension_settings.instead;
+    if (!settings.preserveBlock || !settings.blockRegex) {
+        return { body: text, block: '' };
+    }
+
+    let regex;
+    try {
+        regex = new RegExp(settings.blockRegex);
+    } catch (error) {
+        console.warn(`[${EXTENSION_NAME}] Invalid block regex, ignoring:`, error);
+        return { body: text, block: '' };
+    }
+
+    const match = regex.exec(text);
+    if (!match) {
+        return { body: text, block: '' };
+    }
+
+    const body = text.slice(0, match.index).trimEnd();
+
+    // A match that covers the whole message leaves nothing to revise.
+    if (!body) {
+        return { body: text, block: '' };
+    }
+
+    return { body, block: text.slice(match.index).trim() };
+}
+
 /**
  * Process the revision request with user feedback
+ * @param {number} messageId Message being revised
+ * @param {string} feedback Editorial instructions from the user
+ * @param {string} sourceText The passage to rewrite
+ * @param {Rule[]} rules Standing rules ticked for this revision
+ * @param {boolean} replaceCurrentSwipe Delete the swipe on screen first
  */
-async function processRevisionRequest(messageId, feedback) {
+async function processRevisionRequest(messageId, feedback, sourceText, rules, replaceCurrentSwipe) {
     if (isProcessing) return;
-    
+
     isProcessing = true;
-    const context = getContext();
-    const chat = context.chat;
-    const message = chat[messageId];
 
     try {
         toastr.info('Generating revision with your feedback...');
 
-        // Build a focused revision prompt
-        const revisionPrompt = buildRevisionPrompt(feedback, message);
-        
-        // Check if streaming is enabled globally
-        const isStreamingEnabled = isStreamingOn();
-        
-        if (isStreamingEnabled) {
-            // Use streaming generation
-            await processRevisionWithStreaming(messageId, feedback, message, revisionPrompt);
-        } else {
-            // Use non-streaming generation (original behavior)
-            await processRevisionWithoutStreaming(messageId, feedback, message, revisionPrompt);
+        // The info block never reaches the model; it is stitched back on afterwards.
+        const { body, block } = splitTrailingBlock(sourceText);
+        const revisedBody = await generateRevision(body, feedback, rules);
+
+        if (!revisedBody) {
+            toastr.error('Failed to generate revision.');
+            return;
         }
 
+        const revisedText = block ? `${revisedBody}\n\n${block}` : revisedBody;
+
+        // Only drop the old swipe once we know we have something to put in its place.
+        if (replaceCurrentSwipe) {
+            const message = getContext().chat[messageId];
+            if (Array.isArray(message?.swipes) && message.swipes.length > 1) {
+                await deleteSwipe(message.swipe_id, messageId);
+            }
+        }
+
+        // Re-read the message: deleteSwipe mutates swipes/swipe_id in place.
+        finalizeRevision(messageId, feedback, sourceText, revisedText, rules);
     } catch (error) {
         console.error(`[${EXTENSION_NAME}] Error processing revision:`, error);
-        toastr.error('An error occurred while processing the revision.');
+        toastr.error(error?.message ?? 'An error occurred while processing the revision.');
     } finally {
         isProcessing = false;
     }
 }
 
 /**
- * Check if streaming is enabled in the current settings
+ * Append the revision as a new swipe and switch to it
  */
-function isStreamingOn() {
-    try {
-        const context = getContext();
-        // Check for OpenAI/Chat Completion streaming
-        if (context.mainApi === 'openai') {
-            return context.oai_settings?.stream_openai ?? false;
-        }
-        // Check for text completion streaming (KoboldAI, TextGen, etc.)
-        if (context.mainApi === 'kobold') {
-            return context.kai_settings?.streaming_kobold ?? false;
-        }
-        if (context.mainApi === 'textgenerationwebui') {
-            return context.textgenerationwebui_settings?.streaming ?? false;
-        }
-        if (context.mainApi === 'novel') {
-            return context.nai_settings?.streaming_novel ?? false;
-        }
-        // Default to false if we can't determine
-        return false;
-    } catch (error) {
-        console.debug(`[${EXTENSION_NAME}] Could not determine streaming status:`, error);
-        return false;
-    }
-}
+function finalizeRevision(messageId, feedback, sourceText, revisedText, rules) {
+    const message = getContext().chat[messageId];
 
-/**
- * Process revision without streaming (original behavior)
- */
-async function processRevisionWithoutStreaming(messageId, feedback, message, revisionPrompt) {
-    // Send the revision request using ST's generation system
-    const result = await generateRevision(revisionPrompt);
-
-    // Extract the revised text and thinking from the result
-    const revisedText = typeof result === 'object' ? (result.response || result).toString().trim() : (result || '').trim();
-    const thinkingContent = typeof result === 'object' ? result.thinking : null;
-    
-    if (revisedText) {
-        finalizeRevision(messageId, feedback, message, revisedText, thinkingContent);
-    } else {
-        toastr.error('Failed to generate revision.');
-    }
-}
-
-/**
- * Process revision with streaming
- */
-async function processRevisionWithStreaming(messageId, feedback, message, revisionPrompt) {
-    // First, set up the swipe structure so we have a place to stream to
-    setupSwipeForStreaming(message, feedback);
-    
-    const newSwipeId = message.swipes.length - 1;
-    message.swipe_id = newSwipeId;
-    message.mes = ''; // Start with empty message for streaming
-    
-    // Get the message element to update during streaming
-    const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
-    const mesTextElement = messageElement?.querySelector('.mes_text');
-    
-    if (!mesTextElement) {
-        console.error(`[${EXTENSION_NAME}] Could not find message element for streaming`);
-        // Fall back to non-streaming
-        await processRevisionWithoutStreaming(messageId, feedback, message, revisionPrompt);
-        return;
-    }
-    
-    // Show that we're streaming
-    mesTextElement.innerHTML = '<span class="typing_indicator"><span>.</span><span>.</span><span>.</span></span>';
-    
-    let streamedText = '';
-    let thinkingContent = null;
-    
-    try {
-        // Use generateQuietPrompt with a streaming approach
-        // Since generateQuietPrompt doesn't support streaming callbacks directly,
-        // we'll use it normally but show progress indication
-        // The actual streaming would require deeper integration with ST's streaming system
-        
-        const result = await generateRevision(revisionPrompt);
-        
-        // Extract the revised text and thinking from the result
-        streamedText = typeof result === 'object' ? (result.response || result).toString().trim() : (result || '').trim();
-        thinkingContent = typeof result === 'object' ? result.thinking : null;
-        
-        if (streamedText) {
-            // Update the message with the final text
-            message.mes = streamedText;
-            message.swipes[newSwipeId] = streamedText;
-            
-            // Update the DOM with formatted text
-            const context = getContext();
-            const formattedText = messageFormatting(
-                streamedText,
-                context.name2,
-                false, // isUser
-                false, // isSystem
-            );
-            mesTextElement.innerHTML = formattedText;
-            
-            // Update swipe_info with thinking if available
-            if (thinkingContent && message.swipe_info[newSwipeId]) {
-                message.swipe_info[newSwipeId].extra = message.swipe_info[newSwipeId].extra || {};
-                message.swipe_info[newSwipeId].extra.reasoning = thinkingContent;
-            }
-            
-            // Update message extra
-            if (!message.extra) {
-                message.extra = {};
-            }
-            message.extra.instead_revised = true;
-            message.extra.instead_feedback = feedback;
-            if (thinkingContent) {
-                message.extra.reasoning = thinkingContent;
-            }
-            
-            // Mark generation as finished
-            if (message.swipe_info[newSwipeId]) {
-                message.swipe_info[newSwipeId].gen_finished = new Date().toISOString();
-            }
-
-            // Save the chat
-            await saveChatConditional();
-            
-            // Reload to ensure proper rendering of all elements (thinking box, etc.)
-            await reloadCurrentChat();
-
-            toastr.success('Revision added as new swipe! Swipe left to see the original.');
-        } else {
-            // Remove the empty swipe we added
-            message.swipes.pop();
-            message.swipe_info.pop();
-            message.swipe_id = message.swipes.length - 1;
-            message.mes = message.swipes[message.swipe_id];
-            await reloadCurrentChat();
-            toastr.error('Failed to generate revision.');
-        }
-    } catch (error) {
-        console.error(`[${EXTENSION_NAME}] Streaming error:`, error);
-        // Clean up on error
-        if (message.swipes.length > 1) {
-            message.swipes.pop();
-            message.swipe_info.pop();
-            message.swipe_id = message.swipes.length - 1;
-            message.mes = message.swipes[message.swipe_id];
-        }
-        await reloadCurrentChat();
-        throw error;
-    }
-}
-
-/**
- * Set up the swipe structure for streaming
- */
-function setupSwipeForStreaming(message, feedback) {
-    // Initialize swipes array if it doesn't exist
-    if (!Array.isArray(message.swipes)) {
-        message.swipes = [message.mes];
-        message.swipe_info = [message.extra ? { extra: { ...message.extra } } : {}];
-        message.swipe_id = 0;
-    }
-    
-    // Ensure swipe_info array exists and matches swipes length
-    if (!Array.isArray(message.swipe_info)) {
-        message.swipe_info = message.swipes.map(() => ({}));
-    }
-    
-    // Pad swipe_info to match swipes array if needed
-    while (message.swipe_info.length < message.swipes.length) {
-        message.swipe_info.push({});
-    }
-    
-    // Add placeholder for the new swipe
-    message.swipes.push('');
-    message.swipe_info.push({
-        send_date: new Date().toISOString(),
-        gen_started: new Date().toISOString(),
-        gen_finished: null, // Will be set when generation completes
-        extra: {
-            api: 'inSTead',
-            model: 'revision',
-            instead_revised: true,
-            instead_feedback: feedback,
-        },
-    });
-}
-
-/**
- * Finalize revision (used by non-streaming path)
- */
-function finalizeRevision(messageId, feedback, message, revisedText, thinkingContent) {
     // Initialize swipes array if it doesn't exist
     if (!Array.isArray(message.swipes)) {
         // First swipe should be the current message content
@@ -558,30 +459,29 @@ function finalizeRevision(messageId, feedback, message, revisedText, thinkingCon
         message.swipe_info = [message.extra ? { extra: { ...message.extra } } : {}];
         message.swipe_id = 0;
     }
-    
+
     // Ensure swipe_info array exists and matches swipes length
     if (!Array.isArray(message.swipe_info)) {
         message.swipe_info = message.swipes.map(() => ({}));
     }
-    
+
     // Pad swipe_info to match swipes array if needed
     while (message.swipe_info.length < message.swipes.length) {
         message.swipe_info.push({});
     }
-    
-    // Build the extra data for the new swipe
+
+    // Keep the source passage and the rules used alongside the feedback, so a retry
+    // rewrites from the same starting point under the same constraints instead of
+    // re-revising a revision.
     const newSwipeExtra = {
         api: 'inSTead',
         model: 'revision',
         instead_revised: true,
         instead_feedback: feedback,
+        instead_source: sourceText,
+        instead_rules: rules.map(rule => rule.id),
     };
-    
-    // Include thinking content if available
-    if (thinkingContent) {
-        newSwipeExtra.reasoning = thinkingContent;
-    }
-    
+
     // Add the revision as a new swipe
     message.swipes.push(revisedText);
     message.swipe_info.push({
@@ -590,78 +490,113 @@ function finalizeRevision(messageId, feedback, message, revisedText, thinkingCon
         gen_finished: new Date().toISOString(),
         extra: newSwipeExtra,
     });
-    
+
     // Switch to the new swipe
-    const newSwipeId = message.swipes.length - 1;
-    message.swipe_id = newSwipeId;
+    message.swipe_id = message.swipes.length - 1;
     message.mes = revisedText;
-    
-    // Update extra to mark as revised and include thinking
-    if (!message.extra) {
-        message.extra = {};
-    }
-    message.extra.instead_revised = true;
-    message.extra.instead_feedback = feedback;
-    
-    // Include thinking content in message extra for display
-    if (thinkingContent) {
-        message.extra.reasoning = thinkingContent;
-    }
+
+    // Update extra to mark as revised
+    message.extra = { ...(message.extra ?? {}), ...newSwipeExtra };
 
     // Save and re-render
     saveChatConditional().then(() => reloadCurrentChat());
 
     toastr.success('Revision added as new swipe! Swipe left to see the original.');
 }
+
 /**
- * Build the revision prompt - a focused instruction for the AI
- * The generateQuietPrompt function already includes chat context,
- * so we just need to provide the revision-specific instruction
+ * Render the ticked rules as instructions the model can act on.
+ * A bare prohibition is much weaker than a prohibition paired with a replacement,
+ * which is why rules carry an "instead" half.
+ * @param {Rule[]} rules
  */
-function buildRevisionPrompt(feedback, originalMessage) {
-    // Create a focused revision instruction with clear boundaries and constraints
-    const revisionPrompt = `# Editorial Revision Task
+function renderRules(rules) {
+    if (!rules.length) {
+        return '';
+    }
 
-You are performing an editorial revision. Your ONLY task is to rewrite the message below according to the feedback provided.
+    const lines = rules.map((rule, index) => {
+        const head = `${index + 1}. Avoid: ${rule.forbid.trim()}`;
+        return rule.instead?.trim()
+            ? `${head}\n   Instead: ${rule.instead.trim()}`
+            : head;
+    });
 
-## Critical Rules
-- Output ONLY the revised message text
-- Do NOT continue the story or add new events
-- Do NOT add meta-commentary, explanations, or notes
-- Do NOT acknowledge or reference these instructions
-- Maintain the same general length unless the feedback specifically requests otherwise
-
-## Original Message to Revise
-<original_message>
-${originalMessage.mes}
-</original_message>
-
-## Editorial Feedback
-<feedback>
-${feedback}
-</feedback>
-
-## Your Task
-Rewrite the original message above, incorporating the editorial feedback. The revision should:
-1. Address the specific feedback points
-2. Maintain consistency with prior conversation context
-3. End at the same narrative point as the original (do not continue beyond it)
-4. Preserve the original message's role in the conversation
-
-Begin your revised message now:`;
-
-    return revisionPrompt;
+    return [
+        '## Standing constraints',
+        'The rewrite must satisfy every constraint below.',
+        ...lines,
+        '',
+    ].join('\n');
 }
 
 /**
- * Generate revision using SillyTavern's generation API
+ * Build the messages sent to the model.
+ *
+ * Note that this deliberately does NOT go through generateQuietPrompt: that would
+ * drag the main chat preset's system prompt along, and those instructions routinely
+ * outweigh the revision instructions. Here the editorial rules are the only rules.
  */
-async function generateRevision(revisionPrompt) {
-    // Use SillyTavern's generateQuietPrompt which properly integrates with all backends
-    // Function signature: generateQuietPrompt(quietPrompt, quietToLoud, skipWIAN, quietImage, quietName)
-    const result = await generateQuietPrompt(revisionPrompt, false);
-    
-    return result || '';
+function buildRevisionMessages(sourceText, feedback, rules) {
+    const system = [
+        'You are a line editor. You rewrite a single passage so that it satisfies the editorial instructions you are given.',
+        '',
+        'Output rules:',
+        '- Output ONLY the rewritten passage.',
+        '- Never add a preamble, a summary, notes, or any commentary about the changes you made.',
+        '- Never wrap the output in quotation marks or code fences.',
+        '- Do not carry the story past the point where the original passage ends. No new events, no new scenes.',
+        '- Preserve the narrator, tense, point of view, language and formatting conventions of the original.',
+        '- Keep roughly the same length unless the instructions ask for a different one.',
+    ].join('\n');
+
+    const user = [
+        renderRules(rules),
+        '## Passage to rewrite',
+        '<passage>',
+        sourceText,
+        '</passage>',
+        '',
+        ...(feedback ? ['## Notes for this revision', feedback, ''] : []),
+        'Rewrite the passage now. Output the rewritten passage only.',
+    ].filter(Boolean).join('\n');
+
+    return [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+    ];
+}
+
+/**
+ * Generate revision through the configured connection profile.
+ * @returns {Promise<string>}
+ */
+async function generateRevision(sourceText, feedback, rules) {
+    const context = getContext();
+    const service = context.ConnectionManagerRequestService;
+
+    if (!service || context.extensionSettings.disabledExtensions?.includes('connection-manager')) {
+        throw new Error('inSTead requires the Connection Manager extension to be enabled.');
+    }
+
+    const settings = extension_settings.instead;
+    const profileId = settings.profileId || context.extensionSettings.connectionManager?.selectedProfile;
+
+    if (!profileId) {
+        throw new Error('No connection profile selected. Pick one in the inSTead settings.');
+    }
+
+    const messages = buildRevisionMessages(sourceText, feedback, rules);
+
+    // includePreset keeps the profile's own sampler settings (temperature and friends)
+    // but does not inject its prompt manager entries, which is exactly what we want.
+    const response = await service.sendRequest(profileId, messages, Number(settings.maxTokens) || 2048, {
+        extractData: true,
+        includePreset: true,
+        stream: false,
+    });
+
+    return (response?.content ?? '').trim();
 }
 
 /**
@@ -669,18 +604,262 @@ async function generateRevision(revisionPrompt) {
  */
 function escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = text ?? '';
     return div.innerHTML;
 }
 
-/**
- * Load extension settings
- */
+/* -------------------------------------------------------------------------- */
+/* Settings                                                                    */
+/* -------------------------------------------------------------------------- */
+
 function loadSettings() {
-    if (!extension_settings.instead) {
-        extension_settings.instead = {};
+    extension_settings.instead = Object.assign({}, defaultSettings, extension_settings.instead);
+    const settings = extension_settings.instead;
+
+    // Settings written by older versions may be missing the rule stores entirely.
+    if (!Array.isArray(settings.rules)) {
+        settings.rules = [];
+    }
+    if (!settings.characterRules || typeof settings.characterRules !== 'object') {
+        settings.characterRules = {};
     }
 }
+
+/**
+ * Fill the profile dropdown with the profiles Connection Manager can actually drive.
+ */
+function populateProfileSelect() {
+    const select = document.getElementById('instead_profile');
+    if (!select) {
+        return;
+    }
+
+    const context = getContext();
+    let profiles = [];
+    try {
+        profiles = context.ConnectionManagerRequestService?.getSupportedProfiles() ?? [];
+    } catch (error) {
+        console.debug(`[${EXTENSION_NAME}] Connection Manager unavailable:`, error);
+    }
+
+    const selected = extension_settings.instead.profileId;
+    select.innerHTML = '<option value="">— Use the currently selected profile —</option>';
+    for (const profile of profiles) {
+        const option = document.createElement('option');
+        option.value = profile.id;
+        option.textContent = profile.name;
+        option.selected = profile.id === selected;
+        select.appendChild(option);
+    }
+
+    // The saved profile may have been deleted since; fall back to the default entry.
+    if (selected && !profiles.some(p => p.id === selected)) {
+        select.value = '';
+    }
+}
+
+/**
+ * Build one editable rule row.
+ * @param {Rule} rule
+ */
+function renderRuleRow(rule) {
+    const row = document.createElement('div');
+    row.className = 'instead-rule';
+    row.dataset.id = rule.id;
+    row.innerHTML = `
+        <div class="instead-rule-head">
+            <label class="checkbox_label instead-rule-toggle">
+                <input type="checkbox" class="instead-rule-enabled"${rule.enabled ? ' checked' : ''}>
+                <span>On by default</span>
+            </label>
+            <div class="instead-rule-delete fa-solid fa-trash-can interactable" tabindex="0"></div>
+        </div>
+        <input class="text_pole instead-rule-forbid" placeholder="Avoid: resolving conflict within a single turn">
+        <input class="text_pole instead-rule-instead" placeholder="Instead: end the passage with the tension unresolved">
+    `;
+
+    // Set values as properties, not attributes, so quotes in the text cannot break markup
+    row.querySelector('.instead-rule-forbid').value = rule.forbid ?? '';
+    row.querySelector('.instead-rule-instead').value = rule.instead ?? '';
+    return row;
+}
+
+/**
+ * @param {HTMLElement} container
+ * @param {Rule[]} rules Live array; edits mutate it in place
+ */
+function renderRuleList(container, rules) {
+    container.innerHTML = '';
+
+    if (!rules.length) {
+        const empty = document.createElement('div');
+        empty.className = 'instead-rules-empty';
+        empty.textContent = 'No rules yet.';
+        container.appendChild(empty);
+        return;
+    }
+
+    for (const rule of rules) {
+        container.appendChild(renderRuleRow(rule));
+    }
+}
+
+/**
+ * One delegated handler per list, so rows added later keep working.
+ * @param {HTMLElement} container
+ * @param {() => Rule[]} getRules
+ * @param {() => void} rerender
+ */
+function bindRuleList(container, getRules, rerender) {
+    const findRule = (target) => {
+        const id = target.closest('.instead-rule')?.dataset.id;
+        return getRules().find(rule => rule.id === id);
+    };
+
+    container.addEventListener('input', (event) => {
+        const rule = findRule(event.target);
+        if (!rule) return;
+
+        if (event.target.classList.contains('instead-rule-forbid')) {
+            rule.forbid = event.target.value;
+        } else if (event.target.classList.contains('instead-rule-instead')) {
+            rule.instead = event.target.value;
+        } else {
+            return;
+        }
+        saveSettingsDebounced();
+    });
+
+    container.addEventListener('change', (event) => {
+        if (!event.target.classList.contains('instead-rule-enabled')) return;
+        const rule = findRule(event.target);
+        if (!rule) return;
+        rule.enabled = event.target.checked;
+        saveSettingsDebounced();
+    });
+
+    container.addEventListener('click', (event) => {
+        if (!event.target.classList.contains('instead-rule-delete')) return;
+        const rules = getRules();
+        const index = rules.findIndex(rule => rule.id === event.target.closest('.instead-rule')?.dataset.id);
+        if (index === -1) return;
+        rules.splice(index, 1);
+        saveSettingsDebounced();
+        rerender();
+    });
+}
+
+/**
+ * Refresh the character rules section for whatever chat is open.
+ */
+function refreshCharacterRules() {
+    const section = document.getElementById('instead_char_section');
+    if (!section) {
+        return;
+    }
+
+    const context = getContext();
+    const key = getCurrentCharacterKey();
+    const label = document.getElementById('instead_char_label');
+    const hint = document.getElementById('instead_char_hint');
+    const list = document.getElementById('instead_char_rules');
+    const addButton = document.getElementById('instead_add_char');
+
+    if (!key) {
+        label.textContent = 'Character';
+        list.innerHTML = '';
+        addButton.classList.add('disabled');
+        hint.textContent = context.groupId
+            ? 'Group chats use global rules only — inSTead cannot tell which member a message belongs to.'
+            : 'Select a character to add rules that apply only to them.';
+        return;
+    }
+
+    const name = context.characters[context.characterId]?.name ?? 'Character';
+    label.textContent = name;
+    addButton.classList.remove('disabled');
+    hint.textContent = `Applied on top of the global rules whenever you are chatting with ${name}.`;
+    renderRuleList(list, getCharacterRules(key));
+}
+
+/**
+ * Build the settings drawer
+ */
+async function addSettingsControls() {
+    const html = await renderExtensionTemplateAsync(TEMPLATE_PATH, 'settings');
+    $('#extensions_settings2').append(html);
+
+    $('#instead_profile').on('change', function () {
+        extension_settings.instead.profileId = String($(this).val() ?? '');
+        saveSettingsDebounced();
+    });
+
+    $('#instead_max_tokens').val(extension_settings.instead.maxTokens).on('input', function () {
+        const value = Number($(this).val());
+        extension_settings.instead.maxTokens = Number.isFinite(value) && value > 0 ? value : defaultSettings.maxTokens;
+        saveSettingsDebounced();
+    });
+
+    $('#instead_preserve_block').prop('checked', extension_settings.instead.preserveBlock).on('change', function () {
+        extension_settings.instead.preserveBlock = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    const $blockRegex = $('#instead_block_regex').val(extension_settings.instead.blockRegex);
+    $blockRegex.on('input', function () {
+        const pattern = String($(this).val() ?? '');
+        // Keep a broken pattern out of the settings: splitTrailingBlock would just
+        // skip it, and the message would silently lose its block.
+        try {
+            new RegExp(pattern);
+            $(this).removeClass('instead-invalid');
+            extension_settings.instead.blockRegex = pattern;
+            saveSettingsDebounced();
+        } catch {
+            $(this).addClass('instead-invalid');
+        }
+    });
+
+    $('#instead_reset_regex').on('click', function (event) {
+        event.preventDefault();
+        extension_settings.instead.blockRegex = DEFAULT_BLOCK_REGEX;
+        $blockRegex.val(DEFAULT_BLOCK_REGEX).removeClass('instead-invalid');
+        saveSettingsDebounced();
+    });
+
+    const globalList = document.getElementById('instead_global_rules');
+    const charList = document.getElementById('instead_char_rules');
+
+    bindRuleList(globalList, () => extension_settings.instead.rules, () => {
+        renderRuleList(globalList, extension_settings.instead.rules);
+    });
+    bindRuleList(charList, () => getCharacterRules(getCurrentCharacterKey()), refreshCharacterRules);
+
+    document.getElementById('instead_add_global').addEventListener('click', () => {
+        extension_settings.instead.rules.push(createRule());
+        saveSettingsDebounced();
+        renderRuleList(globalList, extension_settings.instead.rules);
+    });
+
+    document.getElementById('instead_add_char').addEventListener('click', () => {
+        const key = getCurrentCharacterKey();
+        if (!key) {
+            toastr.info('Open a single-character chat to add character rules.');
+            return;
+        }
+        getCharacterRules(key).push(createRule());
+        saveSettingsDebounced();
+        refreshCharacterRules();
+    });
+
+    renderRuleList(globalList, extension_settings.instead.rules);
+    refreshCharacterRules();
+    populateProfileSelect();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Init                                                                        */
+/* -------------------------------------------------------------------------- */
 
 /**
  * Handle click on feedback icon using event delegation
@@ -688,63 +867,56 @@ function loadSettings() {
 function onFeedbackIconClick(event) {
     const target = event.target.closest('.instead-feedback-icon');
     if (!target) return;
-    
+
     event.stopPropagation();
     event.preventDefault();
-    
+
     const messageId = parseInt(target.getAttribute('data-mesid'));
     if (!isNaN(messageId)) {
         showFeedbackPopup(messageId);
     }
 }
 
-// Initialize extension when jQuery is ready
 jQuery(async () => {
     console.log(`[${EXTENSION_NAME}] Initializing...`);
-    
+
     try {
         loadSettings();
-        
+        await addSettingsControls();
+
         // Use event delegation for click handling (works even if button added later)
         $(document).on('click', '.instead-feedback-icon', onFeedbackIconClick);
-        
-        // Add icons and feedback displays to existing messages
+
+        // Add icons to existing messages
         addFeedbackIconsToMessages();
-        
+
         // Listen for new character messages being rendered
         eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
-            console.debug(`[${EXTENSION_NAME}] CHARACTER_MESSAGE_RENDERED event for message ${messageId}`);
             addFeedbackIconToMessage(messageId);
-            addFeedbackDisplayToMessage(messageId);
         });
-        
-        // Also listen for chat changes to re-add icons and feedback displays
+
+        // Also listen for chat changes to re-add icons and repoint the character rules
         eventSource.on(event_types.CHAT_CHANGED, () => {
-            console.debug(`[${EXTENSION_NAME}] CHAT_CHANGED event`);
             // Small delay to ensure DOM is updated
             setTimeout(addFeedbackIconsToMessages, 100);
+            refreshCharacterRules();
         });
-        
+
         // Listen for app ready event (fires on initial load and profile switches)
         eventSource.on(event_types.APP_READY, () => {
-            console.debug(`[${EXTENSION_NAME}] APP_READY event`);
             setTimeout(addFeedbackIconsToMessages, 100);
+            populateProfileSelect();
         });
-        
+
         // Listen for settings loaded (fires when switching profiles/accounts)
         eventSource.on(event_types.SETTINGS_LOADED, () => {
-            console.debug(`[${EXTENSION_NAME}] SETTINGS_LOADED event`);
             loadSettings();
             setTimeout(addFeedbackIconsToMessages, 200);
+            populateProfileSelect();
+            renderRuleList(document.getElementById('instead_global_rules'), extension_settings.instead.rules);
+            refreshCharacterRules();
         });
-        
-        // Listen for swipe changes to update feedback displays
-        eventSource.on(event_types.MESSAGE_SWIPED, () => {
-            console.debug(`[${EXTENSION_NAME}] MESSAGE_SWIPED event`);
-            // Small delay to ensure swipe has been applied
-            setTimeout(updateFeedbackDisplays, 50);
-        });
-        
+
         // Use MutationObserver as a fallback to detect when messages are added to the DOM
         // This handles cases where events might not fire properly during profile switches
         const chatContainer = document.getElementById('chat');
@@ -754,7 +926,7 @@ jQuery(async () => {
                 for (const mutation of mutations) {
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                         for (const node of mutation.addedNodes) {
-                            if (node.nodeType === Node.ELEMENT_NODE && 
+                            if (node.nodeType === Node.ELEMENT_NODE &&
                                 (node.classList?.contains('mes') || node.querySelector?.('.mes'))) {
                                 hasNewMessages = true;
                                 break;
@@ -766,17 +938,13 @@ jQuery(async () => {
                 if (hasNewMessages) {
                     // Debounce to avoid excessive calls
                     clearTimeout(observer.debounceTimer);
-                    observer.debounceTimer = setTimeout(() => {
-                        console.debug(`[${EXTENSION_NAME}] MutationObserver detected new messages`);
-                        addFeedbackIconsToMessages();
-                    }, 150);
+                    observer.debounceTimer = setTimeout(addFeedbackIconsToMessages, 150);
                 }
             });
-            
+
             observer.observe(chatContainer, { childList: true, subtree: true });
-            console.debug(`[${EXTENSION_NAME}] MutationObserver attached to chat container`);
         }
-        
+
         console.log(`[${EXTENSION_NAME}] Initialized successfully`);
     } catch (error) {
         console.error(`[${EXTENSION_NAME}] Failed to initialize:`, error);
