@@ -11,11 +11,13 @@ export const EXTENSION_NAME = 'inSTead';
 export const TEMPLATE_PATH = 'third-party/inSTead';
 
 /**
- * Matches a status/info block pinned to the end of a message: either an explicit
- * <infoblock> wrapper or a trailing <details> element. The negative lookahead stops
- * a match from swallowing an earlier <details> that appears inside the prose.
+ * Matches a status/info panel pinned to the end of a message: a trailing <details>
+ * element, optionally inside a wrapper element of any name. The wrapper tag is
+ * captured rather than hardcoded so this fits whatever convention the user writes
+ * in. The negative lookahead stops a match from swallowing an earlier <details>
+ * that appears inside the prose.
  */
-export const DEFAULT_BLOCK_REGEX = '(?:<infoblock>[\\s\\S]*?<\\/infoblock>|<details>(?:(?!<details>)[\\s\\S])*?<\\/details>)\\s*$';
+export const DEFAULT_BLOCK_REGEX = '(?:<([a-zA-Z][\\w-]*)>\\s*)?<details>(?:(?!<details>)[\\s\\S])*?<\\/details>(?:\\s*<\\/\\1>)?\\s*$';
 
 export const defaultSettings = {
     /** Connection profile used for revisions. Empty = whatever Connection Manager has selected. */

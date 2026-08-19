@@ -5,7 +5,6 @@
     "Keep the trailing info block intact": "끝에 붙은 인포블록 보존",
     "A status panel pinned to the end of a message is held back from the model and re-attached unchanged, so it cannot be rewritten or dropped. Turn this off to let revisions rewrite it too.": "메시지 끝에 붙는 상태 패널을 모델에 보내지 않고, 생성이 끝난 뒤 원본 그대로 다시 붙입니다. 그래서 고쳐 쓰이거나 사라질 수가 없습니다. 인포블록도 같이 고치고 싶으면 끄세요.",
     "Info block pattern": "인포블록 패턴",
-    "Regular expression, anchored to the end of the message. The default catches <infoblock> wrappers and trailing <details> elements.": "메시지 끝에 고정된 정규식입니다. 기본값은 <infoblock> 래퍼와 끝에 붙은 <details> 요소를 잡습니다.",
     "Reset to default": "기본값으로 되돌리기",
     "Standing rules": "상시 규칙",
     "Rules you keep having to repeat, written however you like. Enabled ones come pre-checked in the revision popup, and you can still uncheck any of them per revision.": "매번 반복해서 지적하게 되는 것들을 원하는 대로 적어두세요. 켜둔 규칙은 리비전 창에 미리 체크된 상태로 뜨고, 그때그때 체크를 해제할 수도 있습니다.",
@@ -40,5 +39,6 @@
     "No connection profile selected. Pick one in the inSTead settings.": "접속 프로필이 선택되지 않았습니다. inSTead 설정에서 하나 고르세요.",
     "The chat changed while the revision was generating, so it was discarded.": "리비전을 생성하는 동안 채팅이 바뀌어서 결과를 버렸습니다.",
     "That message is no longer available.": "해당 메시지를 더 이상 찾을 수 없습니다.",
-    "The revision was generated but could not be saved.": "리비전은 생성됐지만 저장에 실패했습니다."
+    "The revision was generated but could not be saved.": "리비전은 생성됐지만 저장에 실패했습니다.",
+    "Regular expression, anchored to the end of the message. The default catches a trailing <details> block, with or without a wrapper element around it.": "메시지 끝에 고정되는 정규식입니다. 기본값은 끝에 붙은 <details> 블록을 잡으며, 바깥을 감싸는 태그가 있어도 함께 잡습니다."
 }

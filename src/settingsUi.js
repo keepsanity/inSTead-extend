@@ -47,7 +47,7 @@ function renderRuleRow(rule) {
             </label>
             <div class="instead-rule-delete fa-solid fa-trash-can interactable" tabindex="0"></div>
         </div>
-        <textarea class="text_pole instead-rule-text" rows="2"></textarea>
+        <textarea class="text_pole instead-rule-text" rows="4"></textarea>
     `;
 
     const textarea = row.querySelector('.instead-rule-text');
@@ -80,8 +80,23 @@ function renderRuleList(container, rules) {
     }
 }
 
+/**
+ * The header badge is the only thing visible while a section is folded, so it has
+ * to carry the count.
+ * @param {string} id
+ * @param {number} count
+ */
+function setRuleCount(id, count) {
+    const badge = document.getElementById(id);
+    if (badge) {
+        badge.textContent = String(count);
+    }
+}
+
 function renderGlobalRules() {
-    renderRuleList(document.getElementById(GLOBAL_LIST_ID), getSettings().rules);
+    const rules = getSettings().rules;
+    renderRuleList(document.getElementById(GLOBAL_LIST_ID), rules);
+    setRuleCount('instead_global_count', rules.length);
 }
 
 /**
@@ -115,6 +130,7 @@ export function refreshCharacterRules() {
     if (!key) {
         label.textContent = t`Character`;
         list.innerHTML = '';
+        setRuleCount('instead_char_count', 0);
         hint.textContent = context.groupId
             ? t`Group chats use global rules only — inSTead cannot tell which member a message belongs to.`
             : t`Select a character to add rules that apply only to them.`;
@@ -122,9 +138,11 @@ export function refreshCharacterRules() {
     }
 
     const name = context.characters[context.characterId]?.name ?? t`Character`;
+    const rules = getCharacterRules(key);
     label.textContent = name;
     hint.textContent = t`Applied on top of the global rules whenever you are chatting with ${name}.`;
-    renderRuleList(list, getCharacterRules(key));
+    renderRuleList(list, rules);
+    setRuleCount('instead_char_count', rules.length);
 }
 
 /**
@@ -162,6 +180,19 @@ export function populateProfileSelect() {
 /* -------------------------------------------------------------------------- */
 /* Behaviour                                                                   */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Grow a rule box to fit its content. Only ever called from an input handler, so
+ * the element is on screen and scrollHeight is meaningful — measuring it while the
+ * settings drawer is still collapsed would report 0 and flatten the box.
+ * @param {HTMLTextAreaElement} textarea
+ */
+function autoGrow(textarea) {
+    textarea.style.height = 'auto';
+    if (textarea.scrollHeight > 0) {
+        textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+}
 
 /**
  * Scroll a freshly added rule into view and put the caret in it. On a phone the
@@ -209,6 +240,7 @@ function bindRuleHandlers() {
         const { rule } = resolveRule(this);
         if (!rule) return;
         rule.text = this.value;
+        autoGrow(this);
         saveSettingsDebounced();
     });
 

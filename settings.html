@@ -21,7 +21,7 @@
             <label for="instead_block_regex" data-i18n="Info block pattern">Info block pattern</label>
             <input id="instead_block_regex" class="text_pole" type="text" spellcheck="false">
             <small class="instead-hint">
-                <span data-i18n="Regular expression, anchored to the end of the message. The default catches &lt;infoblock&gt; wrappers and trailing &lt;details&gt; elements.">Regular expression, anchored to the end of the message. The default catches &lt;infoblock&gt; wrappers and trailing &lt;details&gt; elements.</span>
+                <span data-i18n="Regular expression, anchored to the end of the message. The default catches a trailing &lt;details&gt; block, with or without a wrapper element around it.">Regular expression, anchored to the end of the message. The default catches a trailing &lt;details&gt; block, with or without a wrapper element around it.</span>
                 <a id="instead_reset_regex" href="#" data-i18n="Reset to default">Reset to default</a>
             </small>
 
@@ -30,25 +30,40 @@
             <h4 data-i18n="Standing rules">Standing rules</h4>
             <small class="instead-hint" data-i18n="Rules you keep having to repeat, written however you like. Enabled ones come pre-checked in the revision popup, and you can still uncheck any of them per revision.">Rules you keep having to repeat, written however you like. Enabled ones come pre-checked in the revision popup, and you can still uncheck any of them per revision.</small>
 
-            <div class="instead-rules-section">
-                <div class="instead-rules-title">
-                    <span data-i18n="Global">Global</span>
-                    <div id="instead_add_global" class="menu_button menu_button_icon">
+            <!-- Each list is its own drawer so a long set of rules can be folded away.
+                 The Add button lives inside the content, never in the header: a click
+                 anywhere on an .inline-drawer-toggle collapses the section. -->
+            <div class="instead-rules-section inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header instead-rules-title">
+                    <span class="instead-rules-name">
+                        <span data-i18n="Global">Global</span>
+                        <span id="instead_global_count" class="instead-rules-count">0</span>
+                    </span>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div id="instead_global_rules" class="instead-rules-list"></div>
+                    <div id="instead_add_global" class="menu_button menu_button_icon instead-rules-add">
                         <i class="fa-solid fa-plus"></i><span data-i18n="Add">Add</span>
                     </div>
                 </div>
-                <div id="instead_global_rules" class="instead-rules-list"></div>
             </div>
 
-            <div class="instead-rules-section" id="instead_char_section">
-                <div class="instead-rules-title">
-                    <span id="instead_char_label" data-i18n="Character">Character</span>
-                    <div id="instead_add_char" class="menu_button menu_button_icon">
+            <div class="instead-rules-section inline-drawer" id="instead_char_section">
+                <div class="inline-drawer-toggle inline-drawer-header instead-rules-title">
+                    <span class="instead-rules-name">
+                        <span id="instead_char_label" data-i18n="Character">Character</span>
+                        <span id="instead_char_count" class="instead-rules-count">0</span>
+                    </span>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div id="instead_char_rules" class="instead-rules-list"></div>
+                    <div id="instead_add_char" class="menu_button menu_button_icon instead-rules-add">
                         <i class="fa-solid fa-plus"></i><span data-i18n="Add">Add</span>
                     </div>
+                    <small id="instead_char_hint" class="instead-hint"></small>
                 </div>
-                <div id="instead_char_rules" class="instead-rules-list"></div>
-                <small id="instead_char_hint" class="instead-hint"></small>
             </div>
         </div>
     </div>

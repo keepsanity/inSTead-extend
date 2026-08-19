@@ -35,15 +35,38 @@
     font-weight: bold;
 }
 
+/* .inline-drawer-header already supplies the flex row, so this only adds weight
+   and the gap around the count badge. */
+.instead-rules-title {
+    font-weight: bold;
+}
+
+.instead-rules-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+/* Visible even when the section is folded, so it has to read at a glance. */
+.instead-rules-count {
+    font-weight: normal;
+    font-size: 0.8em;
+    opacity: 0.7;
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    border-radius: 10px;
+    padding: 0 7px;
+    line-height: 1.6;
+}
+
 /* ST's .menu_button is `width: min-content` with 3px padding, which lands well
    under a usable tap target on a phone. Give this one real dimensions. */
-.instead-rules-title .menu_button {
+.instead-rules-add.menu_button {
     width: auto;
     min-height: 36px;
     padding: 6px 14px;
-    margin: 0;
+    margin: 8px 0 0;
     white-space: nowrap;
-    flex-shrink: 0;
     gap: 6px;
 }
 
@@ -143,6 +166,10 @@
 .instead-rule-text {
     resize: vertical;
     box-sizing: border-box;
+    /* Rules run to a couple of sentences; a two-line box makes them unreadable on
+       a phone. This is a floor, and the box grows further as you type. */
+    min-height: 6em;
+    line-height: 1.45;
 }
 
 /* Popup overlay - uses dvh for dynamic viewport height (accounts for mobile browser chrome) */
