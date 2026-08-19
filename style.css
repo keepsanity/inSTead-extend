@@ -35,6 +35,18 @@
     font-weight: bold;
 }
 
+/* ST's .menu_button is `width: min-content` with 3px padding, which lands well
+   under a usable tap target on a phone. Give this one real dimensions. */
+.instead-rules-title .menu_button {
+    width: auto;
+    min-height: 36px;
+    padding: 6px 14px;
+    margin: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
+    gap: 6px;
+}
+
 .instead-rules-list {
     display: flex;
     flex-direction: column;
@@ -47,6 +59,8 @@
     padding: 4px 0;
 }
 
+/* No background fill: a hardcoded black tint reads as dirty grey on light themes.
+   The border alone groups the row and inherits whatever theme is active. */
 .instead-rule {
     display: flex;
     flex-direction: column;
@@ -54,7 +68,6 @@
     padding: 8px;
     border: 1px solid var(--SmartThemeBorderColor, #555);
     border-radius: 8px;
-    background-color: var(--black30a, rgba(0, 0, 0, 0.2));
 }
 
 .instead-rule-head {
@@ -87,7 +100,7 @@
     margin-bottom: 12px;
     padding: 8px 10px;
     border-radius: 5px;
-    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--SmartThemeBorderColor, #555);
     max-height: 30vh;
     max-height: 30dvh;
     overflow-y: auto;
@@ -121,11 +134,15 @@
     font-size: 0.85em;
     min-width: 0;
     word-break: break-word;
+    white-space: pre-wrap;
 }
 
-.instead-rule-pick-instead {
-    display: block;
-    opacity: 0.65;
+/* No font-size here on purpose: .text_pole inherits ST's size, and ST's viewport
+   meta already sets user-scalable=no, so the usual 16px anti-zoom hack would only
+   make this field tower over every other setting. */
+.instead-rule-text {
+    resize: vertical;
+    box-sizing: border-box;
 }
 
 /* Popup overlay - uses dvh for dynamic viewport height (accounts for mobile browser chrome) */
@@ -272,7 +289,8 @@
     border-radius: 5px;
     color: var(--SmartThemeBodyColor, #e0e0e0);
     font-family: inherit;
-    font-size: 16px; /* Prevents iOS zoom on focus */
+    /* No font-size override: ST's viewport meta already sets user-scalable=no, so
+       the usual 16px anti-zoom hack only makes this tower over the rest of the UI. */
     resize: vertical;
     transition: border-color 0.2s ease;
     box-sizing: border-box;
@@ -374,7 +392,6 @@
     
     .instead-feedback-input {
         min-height: 60px;
-        font-size: 16px; /* Prevents iOS zoom */
     }
     
     .instead-popup-footer {

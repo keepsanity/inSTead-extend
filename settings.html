@@ -5,49 +5,36 @@
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <label for="instead_profile">Revision connection profile</label>
+            <label for="instead_profile" data-i18n="Connection Profile">Connection Profile</label>
             <select id="instead_profile" class="text_pole"></select>
-            <small class="instead-hint">
-                Revisions run on this profile instead of the main chat one, so the chat preset's
-                system prompt cannot fight your editorial instructions. Only Chat Completion and
-                Text Completion profiles can be used.
-            </small>
+            <small class="instead-hint" data-i18n="Revisions run on this profile instead of the main chat one, so the chat preset's system prompt cannot fight your editorial instructions. Only Chat Completion and Text Completion profiles can be used.">Revisions run on this profile instead of the main chat one, so the chat preset's system prompt cannot fight your editorial instructions. Only Chat Completion and Text Completion profiles can be used.</small>
 
-            <label for="instead_max_tokens">Response length (tokens)</label>
+            <label for="instead_max_tokens" data-i18n="Response length (tokens)">Response length (tokens)</label>
             <input id="instead_max_tokens" class="text_pole" type="number" min="1" step="1">
 
             <label class="checkbox_label" for="instead_preserve_block">
                 <input id="instead_preserve_block" type="checkbox">
-                <span>Keep the trailing info block intact</span>
+                <span data-i18n="Keep the trailing info block intact">Keep the trailing info block intact</span>
             </label>
-            <small class="instead-hint">
-                A status panel pinned to the end of a message is held back from the model and
-                re-attached unchanged, so it cannot be rewritten or dropped. Turn this off to let
-                revisions rewrite it too.
-            </small>
+            <small class="instead-hint" data-i18n="A status panel pinned to the end of a message is held back from the model and re-attached unchanged, so it cannot be rewritten or dropped. Turn this off to let revisions rewrite it too.">A status panel pinned to the end of a message is held back from the model and re-attached unchanged, so it cannot be rewritten or dropped. Turn this off to let revisions rewrite it too.</small>
 
-            <label for="instead_block_regex">Info block pattern</label>
+            <label for="instead_block_regex" data-i18n="Info block pattern">Info block pattern</label>
             <input id="instead_block_regex" class="text_pole" type="text" spellcheck="false">
             <small class="instead-hint">
-                Regular expression, anchored to the end of the message. The default catches
-                <code>&lt;infoblock&gt;</code> wrappers and trailing <code>&lt;details&gt;</code> elements.
-                <a id="instead_reset_regex" href="#">Reset to default</a>
+                <span data-i18n="Regular expression, anchored to the end of the message. The default catches &lt;infoblock&gt; wrappers and trailing &lt;details&gt; elements.">Regular expression, anchored to the end of the message. The default catches &lt;infoblock&gt; wrappers and trailing &lt;details&gt; elements.</span>
+                <a id="instead_reset_regex" href="#" data-i18n="Reset to default">Reset to default</a>
             </small>
 
             <hr>
 
-            <h4>Standing rules</h4>
-            <small class="instead-hint">
-                Rules you keep having to repeat. Enabled ones come pre-checked in the revision
-                popup, and you can still uncheck any of them per revision. Filling in
-                <b>Instead</b> works far better than a bare prohibition.
-            </small>
+            <h4 data-i18n="Standing rules">Standing rules</h4>
+            <small class="instead-hint" data-i18n="Rules you keep having to repeat, written however you like. Enabled ones come pre-checked in the revision popup, and you can still uncheck any of them per revision.">Rules you keep having to repeat, written however you like. Enabled ones come pre-checked in the revision popup, and you can still uncheck any of them per revision.</small>
 
             <div class="instead-rules-section">
                 <div class="instead-rules-title">
-                    <span>Global</span>
+                    <span data-i18n="Global">Global</span>
                     <div id="instead_add_global" class="menu_button menu_button_icon">
-                        <i class="fa-solid fa-plus"></i><span>Add</span>
+                        <i class="fa-solid fa-plus"></i><span data-i18n="Add">Add</span>
                     </div>
                 </div>
                 <div id="instead_global_rules" class="instead-rules-list"></div>
@@ -55,9 +42,9 @@
 
             <div class="instead-rules-section" id="instead_char_section">
                 <div class="instead-rules-title">
-                    <span id="instead_char_label">Character</span>
+                    <span id="instead_char_label" data-i18n="Character">Character</span>
                     <div id="instead_add_char" class="menu_button menu_button_icon">
-                        <i class="fa-solid fa-plus"></i><span>Add</span>
+                        <i class="fa-solid fa-plus"></i><span data-i18n="Add">Add</span>
                     </div>
                 </div>
                 <div id="instead_char_rules" class="instead-rules-list"></div>
