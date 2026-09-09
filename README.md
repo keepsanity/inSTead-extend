@@ -1,6 +1,6 @@
 # inSTead
 
-![inSTead Logo](inSTeadLogo.png)
+![inSTead Logo](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTeadLogo.png)
 
 A SillyTavern extension that adds editorial feedback capability to character messages. Get better responses by providing specific feedback and requesting revisions—without losing the original!
 
@@ -31,22 +31,22 @@ SillyTavern/data/<user-handle>/extensions/third-party/inSTead/
 
 1. **Find the Icon**: Click the ⋯ (ellipsis) button on any AI message to open the extra buttons menu, then look for the rotating arrows icon (🔄)
 
-![Finding the inSTead icon in the extra buttons menu](inSTead1.PNG)
+![Finding the inSTead icon in the extra buttons menu](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead1.PNG)
 
 2. **Provide Feedback**: Click the icon to open the feedback dialog
    - Review the original message shown in the preview
    - Enter your editorial feedback in the text area
    - Example feedback: "Make this more dramatic", "Add more detail about the setting", "Make the character sound more cheerful"
 
-   ![The feedback dialog popup](inSTead2.PNG)
+   ![The feedback dialog popup](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead2.PNG)
 
 3. **Send and Wait**: Click "Send" (or press Ctrl/Cmd + Enter)
    - The extension will generate a revised message based on your feedback
    - The revision is added as a **new swipe**—the original is preserved!
    - Swipe left to compare with the original, swipe right to return to the revision
 
-   ![Revised message with feedback display](inSTead3.PNG)
-   ![Swipe indicator showing multiple versions](inSTead5.PNG)
+   ![Revised message with feedback display](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead3.PNG)
+   ![Swipe indicator showing multiple versions](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead5.PNG)
 
 ## How It Works
 
@@ -69,7 +69,7 @@ inSTead uses SillyTavern's **Quiet generation** mode for revisions. This is impo
 
 In your **preset** and **lorebooks**, you can use the Generation filters to exclude the respective prompts and entries from affecting the revision, like so:
 
-![Generation filter settings for Quiet mode](inSTead4.PNG)
+![Generation filter settings for Quiet mode](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead4.PNG)
 
 This is useful when you have:
 - System prompts that don't make sense for revision tasks
