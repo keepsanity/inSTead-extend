@@ -3,7 +3,7 @@
     "id": "instead",
     "display_name": "inSTead",
     "description": "Adds a feedback icon to character messages that allows users to provide editorial feedback and get revised responses.",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "author": "ActualBroeckchen",
     "requires": [],
     "js": "index.js",

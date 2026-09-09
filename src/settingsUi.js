@@ -331,7 +331,13 @@ function bindGeneralHandlers() {
  * Build the settings drawer and wire it up.
  */
 export async function addSettingsControls() {
+    // renderTemplateAsync swallows its own errors and returns undefined, so a bad
+    // path shows only a toast and would otherwise leave us appending nothing.
     const html = await renderExtensionTemplateAsync(TEMPLATE_PATH, 'settings');
+    if (!html) {
+        throw new Error(`Could not load settings.html from "${TEMPLATE_PATH}"`);
+    }
+
     $('#extensions_settings2').append(html);
 
     bindGeneralHandlers();

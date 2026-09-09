@@ -7,8 +7,23 @@ import { uuidv4 } from '../../../../utils.js';
 
 export const EXTENSION_NAME = 'inSTead';
 
-/** Path renderExtensionTemplateAsync expects for this extension's templates. */
-export const TEMPLATE_PATH = 'third-party/inSTead';
+/**
+ * Path renderExtensionTemplateAsync expects for this extension's templates.
+ *
+ * Derived from this module's own URL rather than hardcoded. SillyTavern names the
+ * install folder after the repository it was cloned from, so on a fork -- or after
+ * anyone renames the folder -- a fixed name would point at a directory that does
+ * not exist and every template fetch would 404.
+ */
+export const TEMPLATE_PATH = (() => {
+    const marker = '/scripts/extensions/';
+    // This file sits in <extension>/src/, so one level up is the extension root.
+    const dir = new URL('../', import.meta.url).pathname;
+    const index = dir.indexOf(marker);
+    return index === -1
+        ? 'third-party/inSTead'
+        : dir.slice(index + marker.length).replace(/\/+$/, '');
+})();
 
 /**
  * Matches a status/info panel pinned to the end of a message: a trailing <details>
