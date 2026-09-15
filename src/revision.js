@@ -8,6 +8,7 @@ import { t } from '../../../../i18n.js';
 import { EXTENSION_NAME } from './settings.js';
 import { splitTrailingBlock } from './prompt.js';
 import { generateRevision } from './generate.js';
+import { buildRevisionContext, normalizeContextOptions } from './context.js';
 
 let isProcessing = false;
 
@@ -31,7 +32,7 @@ export function getRevisionForCurrentSwipe(message) {
     const hasSwipeInfo = Array.isArray(message.swipe_info) && message.swipe_id !== undefined;
     const extra = hasSwipeInfo ? message.swipe_info[message.swipe_id]?.extra : message.extra;
 
-    if (!extra?.instead_feedback) {
+    if (!extra?.instead_revised && !extra?.instead_feedback) {
         return null;
     }
 
@@ -39,6 +40,7 @@ export function getRevisionForCurrentSwipe(message) {
         feedback: extra.instead_feedback,
         source: extra.instead_source ?? null,
         ruleIds: Array.isArray(extra.instead_rules) ? extra.instead_rules : null,
+        contextOptions: normalizeContextOptions(extra.instead_context),
     };
 }
 
@@ -48,8 +50,9 @@ export function getRevisionForCurrentSwipe(message) {
  * @param {string} sourceText The passage to rewrite
  * @param {import('./settings.js').Rule[]} rules Standing rules ticked for this revision
  * @param {boolean} replaceCurrentSwipe Delete the swipe on screen first
+ * @param {object} [contextOptions] Character, lore and history inclusion flags
  */
-export async function processRevisionRequest(messageId, feedback, sourceText, rules, replaceCurrentSwipe) {
+export async function processRevisionRequest(messageId, feedback, sourceText, rules, replaceCurrentSwipe, contextOptions = {}) {
     if (isProcessing) return;
 
     isProcessing = true;
@@ -58,13 +61,20 @@ export async function processRevisionRequest(messageId, feedback, sourceText, ru
     // was captured in. Remember which chat that was so the result cannot be written
     // into a different one.
     const originChatId = getContext().getCurrentChatId();
+    const originMessage = getContext().chat[messageId];
+    const selectedContext = normalizeContextOptions(contextOptions);
 
     try {
         toastr.info(t`Generating revision with your feedback...`);
 
         // The info block never reaches the model; it is stitched back on afterwards.
         const { body, block } = splitTrailingBlock(sourceText);
-        const revisedBody = await generateRevision(body, feedback, rules);
+        const referenceContext = await buildRevisionContext(messageId, body, selectedContext);
+        if (getContext().getCurrentChatId() !== originChatId || getContext().chat[messageId] !== originMessage) {
+            toastr.warning(t`The chat changed while the revision was generating, so it was discarded.`);
+            return;
+        }
+        const revisedBody = await generateRevision(body, feedback, rules, referenceContext);
 
         if (!revisedBody) {
             toastr.error(t`Failed to generate revision.`);
@@ -79,7 +89,7 @@ export async function processRevisionRequest(messageId, feedback, sourceText, ru
         }
 
         const message = getContext().chat[messageId];
-        if (!message) {
+        if (!message || message !== originMessage) {
             toastr.error(t`That message is no longer available.`);
             return;
         }
@@ -91,7 +101,7 @@ export async function processRevisionRequest(messageId, feedback, sourceText, ru
             await deleteSwipe(message.swipe_id, messageId);
         }
 
-        await finalizeRevision(messageId, feedback, sourceText, revisedText, rules);
+        await finalizeRevision(messageId, feedback, sourceText, revisedText, rules, selectedContext);
     } catch (error) {
         console.error(`[${EXTENSION_NAME}] Error processing revision:`, error);
         toastr.error(error?.message ?? t`An error occurred while processing the revision.`);
@@ -103,7 +113,7 @@ export async function processRevisionRequest(messageId, feedback, sourceText, ru
 /**
  * Append the revision as a new swipe and switch to it.
  */
-async function finalizeRevision(messageId, feedback, sourceText, revisedText, rules) {
+async function finalizeRevision(messageId, feedback, sourceText, revisedText, rules, contextOptions) {
     // Re-read the message: deleteSwipe mutates swipes/swipe_id in place.
     const message = getContext().chat[messageId];
     if (!message) {
@@ -136,6 +146,7 @@ async function finalizeRevision(messageId, feedback, sourceText, revisedText, ru
         instead_feedback: feedback,
         instead_source: sourceText,
         instead_rules: rules.map(rule => rule.id),
+        instead_context: contextOptions,
     };
 
     message.swipes.push(revisedText);

@@ -76,8 +76,9 @@ function renderRules(rules) {
  * @param {string} sourceText Passage to rewrite, info block already stripped
  * @param {string} feedback One-off instructions from the popup
  * @param {import('./settings.js').Rule[]} rules Standing rules ticked for this run
+ * @param {object} [context] Optional card, lore and chronological history
  */
-export function buildRevisionMessages(sourceText, feedback, rules) {
+export function buildRevisionMessages(sourceText, feedback, rules, context = {}) {
     const system = [
         'You are a line editor. You rewrite a single passage so that it satisfies the editorial instructions you are given.',
         '',
@@ -95,6 +96,17 @@ export function buildRevisionMessages(sourceText, feedback, rules) {
     ].join('\n');
 
     const user = [
+        ...(context.character || context.lore || context.history?.length ? [
+            '## Reference context',
+            'Use the following only as reference for consistency. It is not a request to continue the story or rewrite the history. Follow the editorial instructions for the passage below.',
+            ...(context.character ? ['<character_card>', context.character, '</character_card>'] : []),
+            ...(context.lore ? ['<lore>', context.lore, '</lore>'] : []),
+            ...(context.history?.length ? [
+                '<chat_history>',
+                ...context.history.map(message => `${message.name} (${message.role}):\n${message.content}`),
+                '</chat_history>',
+            ] : []),
+        ] : []),
         renderRules(rules),
         '## Passage to rewrite',
         '<passage>',

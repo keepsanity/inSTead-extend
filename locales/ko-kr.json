@@ -1,4 +1,10 @@
 {
+    "Character card": "캐릭터 카드",
+    "Lore (active entries)": "로어 (활성화 항목)",
+    "Full chat history": "전체 채팅 히스토리",
+    "Context for this revision": "이번 교정에 포함할 맥락",
+    "All off: revise only the passage. History includes every message before this one. Lore follows the connected lorebooks' activation rules and budget (Quiet mode).": "모두 끄면 본문만 교정합니다. 히스토리는 이 메시지 직전까지의 전체 대화이며, 로어는 연결된 로어북의 활성화 조건과 예산을 따릅니다 (Quiet 모드).",
+    "Full history is sent without trimming and may exceed the model's context limit in long chats.": "전체 히스토리는 자르지 않고 보내므로 긴 채팅은 모델의 컨텍스트 한도를 넘을 수 있습니다.",
     "Revisions run on this profile instead of the main chat one, so the chat preset's system prompt cannot fight your editorial instructions. Only Chat Completion and Text Completion profiles can be used.": "리비전은 메인 채팅 프로필 대신 이 프로필로 돌아갑니다. 채팅 프리셋의 시스템 프롬프트가 교정 지시와 충돌하지 않게 하려는 것입니다. Chat Completion과 Text Completion 프로필만 사용할 수 있습니다.",
     "— Use the currently selected profile —": "— 현재 선택된 프로필 사용 —",
     "Response length (tokens)": "응답 길이 (토큰)",

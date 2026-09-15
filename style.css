@@ -119,6 +119,26 @@
 }
 
 /* Rule picker inside the revision popup */
+.instead-context-picker {
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    border-radius: 5px;
+    min-width: 0;
+}
+
+.instead-context-picker legend {
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.instead-context-picker small {
+    display: block;
+    margin-top: 6px;
+    opacity: 0.7;
+    line-height: 1.4;
+}
+
 .instead-rules-picker {
     margin-bottom: 12px;
     padding: 8px 10px;

@@ -1,135 +1,35 @@
-# inSTead
+# inSTead-extend
 
-![inSTead Logo](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTeadLogo.png)
-
-A SillyTavern extension that adds editorial feedback capability to character messages. Get better responses by providing specific feedback and requesting revisions—without losing the original!
+A personal fork of [inSTead](https://github.com/ActualBroeckchen/inSTead) for revising SillyTavern messages with feedback and reusable rules.
 
 ## Features
 
-- **Feedback Icon**: Adds a rotating arrows icon (🔄) to the extra message buttons menu (click the ⋯ button on any AI message)
-- **Interactive Popup**: Click the icon to open a mobile-friendly feedback dialog with the original message preview
-- **Non-Destructive Revisions**: Revisions are added as **swipes**, preserving the original message—swipe left to see it anytime
-- **Feedback Display**: Revised messages show a collapsible "Revision Feedback" section with your original feedback and a copy button
-- **Typing Indicator Support**: Visual typing indicator when streaming is enabled in your preset
-- **Smart Revision**: The extension uses SillyTavern's generation system with your existing settings and context
+- Global and character-specific rules, selectable for each revision.
+- Optional character card, active lore, and full chat history before the message being revised.
+- A separate connection profile for revisions.
+- New swipes that preserve the original, with an option to replace a previous revision.
+- Trailing status/info block preservation.
 
-## Installation
+Leave all context options off to send only the passage, rules, and feedback. Lore follows the connected lorebooks' activation rules and budget in Quiet mode. Full history is not trimmed and can exceed the model's context limit in long chats.
 
-1. Open SillyTavern
-2. Go to Extensions (puzzle piece icon)
-3. Click "Install Extension"
-4. Choose "Install from URL" or "Install from folder"
-5. Enter this repository URL or select the folder containing the extension files
-6. The extension will be automatically enabled
+## Install
 
-Alternatively, manually copy the extension files to your SillyTavern installation:
-```
-SillyTavern/data/<user-handle>/extensions/third-party/inSTead/
+In SillyTavern, open **Extensions → Install Extension** and paste:
+
+```text
+https://github.com/keepsanity/inSTead-extend
 ```
 
-## Usage
+Enable **Connection Manager** and select a supported Chat Completion or Text Completion profile in the inSTead settings.
 
-1. **Find the Icon**: Click the ⋯ (ellipsis) button on any AI message to open the extra buttons menu, then look for the rotating arrows icon (🔄)
+## Use
 
-![Finding the inSTead icon in the extra buttons menu](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead1.PNG)
-
-2. **Provide Feedback**: Click the icon to open the feedback dialog
-   - Review the original message shown in the preview
-   - Enter your editorial feedback in the text area
-   - Example feedback: "Make this more dramatic", "Add more detail about the setting", "Make the character sound more cheerful"
-
-   ![The feedback dialog popup](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead2.PNG)
-
-3. **Send and Wait**: Click "Send" (or press Ctrl/Cmd + Enter)
-   - The extension will generate a revised message based on your feedback
-   - The revision is added as a **new swipe**—the original is preserved!
-   - Swipe left to compare with the original, swipe right to return to the revision
-
-   ![Revised message with feedback display](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead3.PNG)
-   ![Swipe indicator showing multiple versions](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead5.PNG)
-
-## How It Works
-
-When you submit feedback, inSTead:
-
-1. Uses SillyTavern's `generateQuietPrompt` API (works with all backends)
-2. Sends a revision instruction that includes:
-   - The original message text
-   - Your editorial feedback
-   - A request to write a revised version
-3. Adds the generated revision as a new swipe on the message
-4. Stores your feedback with the revision for later reference
-5. Automatically switches to display the revision
-
-The extension leverages your existing SillyTavern configuration—character card, chat context, and generation settings are all used automatically.
-
-### About Quiet Generation Mode
-
-inSTead uses SillyTavern's **Quiet generation** mode for revisions. This is important because it allows you to control what context is included when generating revisions.
-
-In your **preset** and **lorebooks**, you can use the Generation filters to exclude the respective prompts and entries from affecting the revision, like so:
-
-![Generation filter settings for Quiet mode](https://raw.githubusercontent.com/keepsanity/inSTead-extend/assets/inSTead4.PNG)
-
-This is useful when you have:
-- System prompts that don't make sense for revision tasks
-- Lorebook entries that might confuse the revision process
-- Jailbreaks or special instructions that should only apply to roleplay, not editing
-
-By leveraging Quiet mode, you can fine-tune which parts of your setup affect revisions without changing your normal generation behavior.
-
-### Limitations
-
-Quiet mode does not currently support streaming or thinking output. The model does go through the reasoning step if it is supposed to, but the results are discarded. These were requested features, but can't be implemented this way. Instead, the thinking for the original message will be included.
-
-## Tips
-
-- **Be specific**: Instead of "make it better", try "add more sensory details" or "make the dialogue more natural"
-- **Use for any issue**: Grammar, tone, pacing, detail level, character consistency, etc.
-- **Iterate**: You can request multiple revisions—each becomes a new swipe you can compare
-- **Works with all backends**: Compatible with any LLM backend configured in SillyTavern (OpenAI, Claude, local models, etc.)
-- **Mobile-friendly**: The popup is fully responsive and works well on phones and tablets
-
-## Technical Details
-
-- **Manifest Version**: 1
-- **Files**: 
-  - `manifest.json` - Extension metadata
-  - `index.js` - Main functionality (ES module)
-  - `style.css` - Responsive UI styling
-- **Dependencies**: None (uses SillyTavern's built-in APIs)
-- **API Used**: `generateQuietPrompt` for generation, standard swipe system for results
-- **Compatibility**: SillyTavern 1.10.0+
-
-## Troubleshooting
-
-**Icon not appearing**: 
-- Make sure the extension is enabled in the Extensions menu
-- The icon appears in the extra buttons menu (click ⋯ on a message first)
-- Refresh the page (F5)
-- Check browser console for errors
-
-**Revision fails**:
-- Ensure your LLM backend is properly configured and connected
-- Check that you have an active connection to your AI service
-- Look for error messages in the browser console (F12)
-
-**Popup doesn't open**:
-- Check for JavaScript errors in browser console
-- Try disabling other extensions temporarily to check for conflicts
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-## License
-
-MIT License - Feel free to modify and distribute as needed.
+1. Open a character message's **⋯** menu and click the revision icon.
+2. Choose rules and optional context, then enter any feedback.
+3. Click **Send**. The revision appears as a new swipe.
 
 ## Credits
 
-Created by ActualBroeckchen
+Original extension by [ActualBroeckchen](https://github.com/ActualBroeckchen/inSTead). Fork maintained by [keepsanity](https://github.com/keepsanity).
 
----
-
-*Enhance your storytelling with targeted, iterative improvements!*
+MIT License, as stated in the original project.

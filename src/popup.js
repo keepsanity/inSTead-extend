@@ -7,6 +7,25 @@ import { t } from '../../../../i18n.js';
 import { getApplicableRules } from './settings.js';
 import { getRevisionForCurrentSwipe, processRevisionRequest, isRevisionInProgress } from './revision.js';
 import { escapeHtml } from './dom.js';
+import { normalizeContextOptions } from './context.js';
+
+function renderContextPicker(options) {
+    const selected = normalizeContextOptions(options);
+    const choices = [
+        ['character', t`Character card`],
+        ['lore', t`Lore (active entries)`],
+        ['history', t`Full chat history`],
+    ];
+    return `<fieldset class="instead-context-picker">
+        <legend>${escapeHtml(t`Context for this revision`)}</legend>
+        ${choices.map(([key, label]) => `<label class="instead-rule-pick">
+            <input type="checkbox" data-context="${key}"${selected[key] ? ' checked' : ''}>
+            <span>${escapeHtml(label)}</span>
+        </label>`).join('')}
+        <small>${escapeHtml(t`All off: revise only the passage. History includes every message before this one. Lore follows the connected lorebooks' activation rules and budget (Quiet mode).`)}</small>
+        <small>${escapeHtml(t`Full history is sent without trimming and may exceed the model's context limit in long chats.`)}</small>
+    </fieldset>`;
+}
 
 /**
  * Checkbox list of the rules that apply here.
@@ -48,6 +67,7 @@ export function showFeedbackPopup(messageId) {
     // The button carries a mesid captured when it was injected, so it can outlive
     // the message it points at while the chat is being rebuilt.
     const message = getContext().chat[messageId];
+    const originChatId = getContext().getCurrentChatId();
     if (!message) {
         toastr.warning(t`That message is no longer available.`);
         return;
@@ -76,6 +96,7 @@ export function showFeedbackPopup(messageId) {
                         <div class="instead-message-preview">${escapeHtml(sourceText)}</div>
                     </div>
                     ${renderRulePicker(rules, previous?.ruleIds ?? null)}
+                    ${renderContextPicker(previous?.contextOptions)}
                     <textarea
                         class="instead-feedback-input text_pole"
                         placeholder="${escapeHtml(t`Enter your editorial feedback here...`)}"
@@ -123,10 +144,17 @@ export function showFeedbackPopup(messageId) {
      * @param {boolean} replaceCurrentSwipe Drop the swipe on screen before generating
      */
     const submit = async (replaceCurrentSwipe) => {
+        if (getContext().getCurrentChatId() !== originChatId || getContext().chat[messageId] !== message) {
+            closePopup();
+            toastr.warning(t`That message is no longer available.`);
+            return;
+        }
         const feedback = feedbackInput.value.trim();
         const checkedIds = [...popup.querySelectorAll('.instead-rule-pick input:checked')]
             .map(input => input.dataset.ruleId);
         const selectedRules = rules.filter(rule => checkedIds.includes(rule.id));
+        const contextOptions = Object.fromEntries([...popup.querySelectorAll('[data-context]')]
+            .map(input => [input.dataset.context, input.checked]));
 
         if (!feedback && !selectedRules.length) {
             toastr.warning(t`Enter some feedback or tick at least one rule.`);
@@ -134,7 +162,7 @@ export function showFeedbackPopup(messageId) {
         }
 
         closePopup();
-        await processRevisionRequest(messageId, feedback, sourceText, selectedRules, replaceCurrentSwipe);
+        await processRevisionRequest(messageId, feedback, sourceText, selectedRules, replaceCurrentSwipe, contextOptions);
     };
 
     sendBtn.addEventListener('click', () => submit(false));

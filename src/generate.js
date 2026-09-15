@@ -12,9 +12,10 @@ import { buildRevisionMessages } from './prompt.js';
  * @param {string} sourceText
  * @param {string} feedback
  * @param {import('./settings.js').Rule[]} rules
+ * @param {object} [referenceContext] Selected reference material, collected before the request
  * @returns {Promise<string>}
  */
-export async function generateRevision(sourceText, feedback, rules) {
+export async function generateRevision(sourceText, feedback, rules, referenceContext = {}) {
     const context = getContext();
     const service = context.ConnectionManagerRequestService;
 
@@ -29,7 +30,7 @@ export async function generateRevision(sourceText, feedback, rules) {
         throw new Error(t`No connection profile selected. Pick one in the inSTead settings.`);
     }
 
-    const messages = buildRevisionMessages(sourceText, feedback, rules);
+    const messages = buildRevisionMessages(sourceText, feedback, rules, referenceContext);
 
     // includePreset keeps the profile's own sampler settings (temperature and friends)
     // but does not inject its prompt manager entries, which is exactly what we want.
