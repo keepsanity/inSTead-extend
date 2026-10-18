@@ -89,6 +89,8 @@ export function buildRevisionMessages(sourceText, feedback, rules, context = {})
         '- Do not carry the story past the point where the original passage ends. No new events, no new scenes.',
         '- Preserve the narrator, tense, point of view, language and formatting conventions of the original.',
         '- Keep roughly the same length unless the instructions ask for a different one.',
+        '- Return the entire revised passage from beginning to end, including unchanged paragraphs. Never output only the edits, an excerpt, or a summary.',
+        '- Do not omit the ending or later paragraphs. Preserve all substantive content unless the editorial instructions explicitly require its removal or shortening.',
         '',
         'When an instruction only says what to avoid, do not simply delete the offending',
         'text: replace it with the most natural alternative for the surrounding passage.',

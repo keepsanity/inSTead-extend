@@ -1,4 +1,6 @@
 {
+    "The revision hit the output token limit and was not saved. Increase Response length (tokens) in the inSTead settings and try again. Reasoning models may use part of this budget for thinking.": "출력 토큰 한도에 도달해 잘린 교정 결과를 저장하지 않았습니다. inSTead 설정에서 응답 길이 (토큰)를 늘린 뒤 다시 시도하세요. 추론 모델은 이 예산 일부를 생각하는 데 사용할 수 있습니다.",
+    "The provider stopped the revision before completion. The existing message was kept.": "제공자가 교정을 완료하기 전에 출력을 중단했습니다. 기존 메시지는 유지했습니다.",
     "Character card": "캐릭터 카드",
     "Lore (active entries)": "로어 (활성화 항목)",
     "Full chat history": "전체 채팅 히스토리",

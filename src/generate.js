@@ -3,6 +3,7 @@
  */
 
 import { getContext } from '../../../../extensions.js';
+import { extractMessageFromData } from '../../../../../script.js';
 import { t } from '../../../../i18n.js';
 import { getSettings } from './settings.js';
 import { buildRevisionMessages } from './prompt.js';
@@ -31,16 +32,31 @@ export async function generateRevision(sourceText, feedback, rules, referenceCon
     }
 
     const messages = buildRevisionMessages(sourceText, feedback, rules, referenceContext);
+    const api = service.validateProfile(service.getProfile(profileId)).selected;
 
     // includePreset keeps the profile's own sampler settings (temperature and friends)
     // but does not inject its prompt manager entries, which is exactly what we want.
     const response = await service.sendRequest(profileId, messages, Number(settings.maxTokens) || 2048, {
-        extractData: true,
+        // Keep finish reasons: extracted responses contain only content/reasoning.
+        extractData: false,
         includePreset: true,
         stream: false,
     });
 
-    return (response?.content ?? '').trim();
+    const reason = response?.choices?.[0]?.finish_reason
+        ?? response?.stop_reason
+        ?? response?.candidates?.[0]?.finishReason
+        ?? response?.finish_reason;
+    const normalizedReason = String(reason ?? '').toLowerCase();
+    if (['length', 'max_tokens', 'max_output_tokens', 'model_length'].includes(normalizedReason)
+        || response?.incomplete_details?.reason === 'max_output_tokens') {
+        throw new Error(t`The revision hit the output token limit and was not saved. Increase Response length (tokens) in the inSTead settings and try again. Reasoning models may use part of this budget for thinking.`);
+    }
+    if (['content_filter', 'safety', 'recitation', 'blocklist', 'prohibited_content'].includes(normalizedReason)) {
+        throw new Error(t`The provider stopped the revision before completion. The existing message was kept.`);
+    }
+
+    return (extractMessageFromData(response, api) ?? '').trim();
 }
 
 /**

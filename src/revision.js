@@ -3,7 +3,7 @@
  */
 
 import { getContext } from '../../../../extensions.js';
-import { saveChatConditional, reloadCurrentChat, deleteSwipe } from '../../../../../script.js';
+import { saveChatConditional, updateMessageBlock, refreshSwipeButtons, deleteSwipe } from '../../../../../script.js';
 import { t } from '../../../../i18n.js';
 import { EXTENSION_NAME } from './settings.js';
 import { splitTrailingBlock } from './prompt.js';
@@ -101,6 +101,13 @@ export async function processRevisionRequest(messageId, feedback, sourceText, ru
             await deleteSwipe(message.swipe_id, messageId);
         }
 
+        // Swipe deletion awaits host events and a save, during which the user may
+        // switch chats or the target message may be replaced.
+        if (getContext().getCurrentChatId() !== originChatId || getContext().chat[messageId] !== originMessage) {
+            toastr.warning(t`The chat changed while the revision was generating, so it was discarded.`);
+            return;
+        }
+
         await finalizeRevision(messageId, feedback, sourceText, revisedText, rules, selectedContext);
     } catch (error) {
         console.error(`[${EXTENSION_NAME}] Error processing revision:`, error);
@@ -161,12 +168,14 @@ async function finalizeRevision(messageId, feedback, sourceText, revisedText, ru
     message.mes = revisedText;
     message.extra = { ...(message.extra ?? {}), ...newSwipeExtra };
 
-    // Awaited, and the toast only fires once it has actually landed. Announcing
-    // success before the save settles would leave the old text on screen under a
-    // green success toast whenever the write fails.
+    // Render in place before awaiting the save. The host can swallow save errors,
+    // so reloading here could discard unsaved messages or clear the whole view.
+    // Do not touch the UI after the await: another chat may then be open.
+    updateMessageBlock(messageId, message);
+    refreshSwipeButtons(true);
+
     try {
         await saveChatConditional();
-        await reloadCurrentChat();
     } catch (error) {
         console.error(`[${EXTENSION_NAME}] Failed to save the revision:`, error);
         toastr.error(t`The revision was generated but could not be saved.`);
